@@ -1,0 +1,12 @@
+# Pyinstaller Build export
+build
+dist
+
+# env
+venv
+
+# IDE
+.idea
+
+# target file
+*.pdf

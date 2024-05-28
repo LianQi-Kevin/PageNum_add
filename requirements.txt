@@ -1,0 +1,6 @@
+# PDF Editer
+PyPDF2>3.0.0
+reportlab
+
+# Packing
+pyinstaller
