@@ -3,7 +3,7 @@ import os
 from typing import Optional, Tuple, List
 
 import PyPDF2
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4, A3, A2, A1, A0, landscape
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -18,6 +18,28 @@ DEFAULT_START_PAGE_NUMBER = 1
 def print_welcome():
     print("欢迎使用PDF页码添加工具！")
     print("本程序将帮助您在PDF文件的指定位置添加页码。")
+
+
+def get_page_size() -> Tuple[float, float]:
+    page_size_input = input("请输入页面尺寸（A4, A3, A2, A1, A0），默认为A4 (回车即使用默认参数)：").upper()
+    if page_size_input == "A3":
+        return A3
+    elif page_size_input == "A2":
+        return A2
+    elif page_size_input == "A1":
+        return A1
+    elif page_size_input == "A0":
+        return A0
+    else:
+        return A4
+
+
+def get_page_number_position() -> str:
+    position_input = input(
+        "请选择页码放置的位置（top, bottom, left, right, auto），默认为auto (回车即使用默认参数)：").lower()
+    if position_input not in ['top', 'bottom', 'left', 'right', 'auto']:
+        return 'auto'
+    return position_input
 
 
 def scan_pdf_files(directory: str = '.') -> List[str]:
@@ -76,25 +98,10 @@ def get_user_input() -> Tuple[Tuple[float, float, float, float], float, int]:
 
 
 def create_page_number_pdf(num_pages: int, pdf_path: str, margins: Tuple[float, float, float, float],
-                           footer_height: float, start_page_number: int, font_path: Optional[str] = None,
-                           font_size: float = 10.5) -> io.BytesIO:
-    """
-    创建包含页码的PDF文件。
-
-    参数:
-    num_pages (int): PDF文件的总页数。
-    pdf_path (str): 输入PDF文件的路径，用于检测页面方向。
-    margins (Tuple[float, float, float, float]): 页边距（上、右、下、左），单位为厘米。
-    footer_height (float): 页脚高度，单位为厘米。
-    start_page_number (int): 起始页码。
-    font_path (Optional[str]): 字体文件路径，如果为None则使用系统中的宋体。
-    font_size (float): 字体大小。
-
-    返回:
-    io.BytesIO: 包含页码的PDF文件流。
-    """
+                           footer_height: float, start_page_number: int, page_size: Tuple[float, float],
+                           position: str, font_path: Optional[str] = None, font_size: float = 10.5) -> io.BytesIO:
     packet = io.BytesIO()
-    c = canvas.Canvas(packet, pagesize=A4)
+    c = canvas.Canvas(packet, pagesize=page_size)
 
     # 注册系统中的宋体字体
     if font_path is None:
@@ -110,37 +117,55 @@ def create_page_number_pdf(num_pages: int, pdf_path: str, margins: Tuple[float, 
         width, height = page.mediabox.upper_right
 
         if width > height:  # 横板页面
-            page_size = landscape(A4)
+            current_page_size = landscape(page_size)
         else:  # 竖板页面
-            page_size = A4
+            current_page_size = page_size
 
-        c.setPageSize(page_size)
+        c.setPageSize(current_page_size)
 
         # 计算页码
         page_number = start_page_number + i
 
-        # 计算页码位置，单位为厘米
-        left_margin = margins[3] * cm
-        right_margin = margins[1] * cm
-        footer_height_points = footer_height * cm
-
-        # 计算x, y坐标
-        x_position = (page_size[0] - left_margin - right_margin) / 2 + left_margin
-        y_position = footer_height_points
-
-        # 计算文字宽度
-        text_width = c.stringWidth(str(page_number), 'SimSun', font_size)
-
-        # 换算x坐标
-        x_position -= text_width / 2
+        # 根据用户选择的位置计算页码的位置
+        if position == 'top':
+            x_position = (current_page_size[0] - margins[3] * cm - margins[1] * cm) / 2 + margins[3] * cm
+            y_position = current_page_size[1] - footer_height * cm
+            text_angle = 0
+        elif position == 'bottom':
+            x_position = (current_page_size[0] - margins[3] * cm - margins[1] * cm) / 2 + margins[3] * cm
+            y_position = footer_height * cm
+            text_angle = 0
+        elif position == 'left':
+            x_position = footer_height * cm
+            y_position = (current_page_size[1] - margins[0] * cm - margins[2] * cm) / 2 + margins[0] * cm
+            text_angle = 270
+        elif position == 'right':
+            x_position = current_page_size[0] - footer_height * cm
+            y_position = (current_page_size[1] - margins[0] * cm - margins[2] * cm) / 2 + margins[0] * cm
+            text_angle = 90
+        else:  # auto
+            x_position = (current_page_size[0] - margins[3] * cm - margins[1] * cm) / 2 + margins[3] * cm
+            y_position = footer_height * cm
+            text_angle = 0
 
         # 手动补偿页码位置(奇怪的对不齐)
         x_position += 0.05 * cm
         y_position += 0.15 * cm
 
+        # 计算文字宽度
+        text_width = c.stringWidth(str(page_number), 'SimSun', font_size)
+
+        # 对于顶部和底部位置，调整x坐标以使文字居中
+        if position in ['top', 'bottom', 'auto']:
+            x_position -= text_width / 2
+
         # 绘制页码
         c.setFont('SimSun', font_size)
-        c.drawString(x_position, y_position, str(page_number))
+        c.saveState()
+        c.translate(x_position, y_position)
+        c.rotate(text_angle)
+        c.drawString(0, 0, str(page_number))
+        c.restoreState()
         c.showPage()
 
     c.save()
@@ -149,24 +174,14 @@ def create_page_number_pdf(num_pages: int, pdf_path: str, margins: Tuple[float, 
 
 
 def add_page_numbers(pdf_path: str, output_path: str, margins: Tuple[float, float, float, float], footer_height: float,
-                     start_page_number: int = 1) -> str:
-    """
-    给PDF文件添加页码。
-
-    参数:
-    pdf_path (str): 输入PDF文件的路径。
-    output_path (str): 输出PDF文件的路径。
-    margins (Tuple[float, float, float, float]): 页边距（上、右、下、左），单位为厘米。
-    footer_height (float): 页脚高度，单位为厘米。
-    start_page_number (int): 起始页码。
-    """
+                     start_page_number: int, page_size: Tuple[float, float], position: str) -> str:
     # 打开现有的PDF文件
     reader = PyPDF2.PdfReader(pdf_path)
     writer = PyPDF2.PdfWriter()
     num_pages = len(reader.pages)
 
     # 创建页码PDF文件
-    packet = create_page_number_pdf(num_pages, pdf_path, margins, footer_height, start_page_number)
+    packet = create_page_number_pdf(num_pages, pdf_path, margins, footer_height, start_page_number, page_size, position)
     temp_reader = PyPDF2.PdfReader(packet)
 
     for i in range(num_pages):
@@ -232,9 +247,11 @@ def main():
         return
 
     margins, footer_height, start_page_number = get_user_input()
+    page_size = get_page_size()
+    position = get_page_number_position()
 
     output_pdf_file = check_output_path(f"{os.path.basename(pdf_file)}_output.pdf")
-    add_page_numbers(pdf_file, output_pdf_file, margins, footer_height, start_page_number)
+    add_page_numbers(pdf_file, output_pdf_file, margins, footer_height, start_page_number, page_size, position)
     print(f"已成功将页码添加到PDF文件。输出文件为：{output_pdf_file}")
 
 

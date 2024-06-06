@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='main',
+    name='PageCode_Add',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
